@@ -287,17 +287,3 @@ docker-compose down -v
 echo -n "password123" | sha256sum
 ```
 
-## 📚 Полезные ссылки
-
-- [Zabbix Documentation](https://www.zabbix.com/documentation/current/en)
-- [GrayLog Documentation](https://docs.graylog.org)
-- [Fluent Bit Documentation](https://docs.fluentbit.io)
-
-## 📄 Лицензия
-
-Это учебный проект для курсовой работы.
-
----
-
-**Последнее обновление:** май 2026 г.
-**Адаптация:** ELK → GrayLog
