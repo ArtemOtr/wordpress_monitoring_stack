@@ -1,0 +1,206 @@
+services:
+  # ==================== ZABBIX CORE ====================
+  zabbix-db:
+    image: mariadb:11.4         
+    container_name: zabbix-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: zabbix_root_pass  
+      MARIADB_DATABASE: zabbix
+      MARIADB_USER: zabbix
+      MARIADB_PASSWORD: zabbix_pass
+    volumes:
+      - zabbix-db:/var/lib/mysql
+    networks:
+      - zabbix-net
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  zabbix-server:
+    image: zabbix/zabbix-server-mysql:ubuntu-7.4-latest
+    container_name: zabbix-server
+    restart: unless-stopped
+    depends_on:
+      zabbix-db:
+        condition: service_healthy
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix_pass
+      MYSQL_DATABASE: zabbix
+      ZBX_DEBUGLEVEL: 3
+    volumes:
+      - ./zabbix_server_alertscripts:/usr/lib/zabbix/alertscripts
+    networks:
+      - zabbix-net
+    ports:
+      - "10052:10051"
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+        tag: "zabbix-server"
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-mysql:ubuntu-7.4-latest
+    container_name: zabbix-web
+    restart: unless-stopped
+    depends_on:
+      zabbix-server:
+        condition: service_started
+      zabbix-db:
+        condition: service_healthy
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix_pass
+      MYSQL_DATABASE: zabbix
+      ZBX_SERVER_HOST: zabbix-server
+      ZBX_SERVER_PORT: 10051
+      PHP_TZ: Europe/Moscow
+      ZBX_NODEADDRESS: "zabbix-server" 
+    networks:
+      - zabbix-net
+    ports:
+      - "8088:8080"
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+        tag: "zabbix-web"
+
+  # ==================== ПРИЛОЖЕНИЯ С АГЕНТАМИ ====================
+
+  nginx-custom:
+    build: ./nginx-custom
+    container_name: nginx-custom
+    restart: unless-stopped
+    networks:
+      - zabbix-net
+    ports:
+      - "81:80"
+    depends_on:
+      - zabbix-server
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+        tag: "nginx-custom"
+
+  mysql-wp:
+    container_name: mysql-wp
+    restart: unless-stopped
+    build: ./mysql-wp
+    environment:
+      MARIADB_ROOT_PASSWORD: wp_root_pass
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wp_user
+      MARIADB_PASSWORD: wp_pass
+    volumes:
+      - wp-mysql:/var/lib/mysql
+    networks:
+      - zabbix-net
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+        tag: "mysql-wp"
+
+  wordpress:
+    build: ./wordpress
+    container_name: wordpress
+    restart: unless-stopped
+    depends_on:
+      - mysql-wp
+    environment:
+      WORDPRESS_DB_HOST: mysql-wp
+      WORDPRESS_DB_USER: wp_user
+      WORDPRESS_DB_PASSWORD: wp_pass
+      WORDPRESS_DB_NAME: wordpress
+    networks:
+      - zabbix-net
+    ports:
+      - "82:80"
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+        tag: "wordpress"
+
+  # ==================== GRAYLOG CORE ====================
+
+  mongodb:
+    image: mongo:7.0
+    container_name: mongodb
+    restart: unless-stopped
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - zabbix-net
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+        tag: "mongodb"
+
+  elasticsearch:
+    image: elasticsearch:7.17.13
+    container_name: elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx1g
+    volumes:
+      - es-data-7:/usr/share/elasticsearch/data
+    networks:
+      - zabbix-net
+    ports:
+      - "9200:9200"
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://localhost:12201"
+        tag: "elasticsearch"
+
+  graylog:
+    image: graylog/graylog:6.0
+    container_name: graylog
+    restart: unless-stopped
+    depends_on:
+      - mongodb
+      - elasticsearch
+    environment:
+      - GRAYLOG_PASSWORD_SECRET=be123456789abcdef123456789abcdef123456789abcdef123456789abcdef123
+      - GRAYLOG_NODE_ID_FILE=/usr/share/graylog/data/node-id
+      - GRAYLOG_HTTP_BIND_ADDRESS=0.0.0.0:9000
+      - GRAYLOG_HTTP_EXTERNAL_URI=http://localhost:9000/
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - GRAYLOG_MONGODB_URI=mongodb://mongodb:27017/graylog
+      - GRAYLOG_TIMEZONE=Europe/Moscow
+      - GRAYLOG_ROOT_USERNAME=admin
+      - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+      - GRAYLOG_ROOT_EMAIL=admin@localhost
+    volumes:
+      - graylog-data:/usr/share/graylog/data
+    networks:
+      - zabbix-net
+    ports:
+      - "9000:9000"
+      - "5044:5044/tcp"
+      - "5140:5140/udp"
+      - "12201:12201/udp"
+
+networks:
+  zabbix-net:
+    driver: bridge
+
+volumes:
+  zabbix-db:
+  wp-mysql:
+  mongodb-data:
+  es-data-7:
+  graylog-data:
