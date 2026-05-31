@@ -261,29 +261,4 @@ docker-compose down
 docker-compose down -v
 ```
 
-## 🔧 Расширение
-
-### Добавить новый input в GrayLog
-Отредактируйте `init-graylog.sh` и добавьте вызов `create_gelf_input` или `create_syslog_input`.
-
-### Добавить мониторинг для нового хоста
-1. Установите Zabbix Agent2 на хост
-2. Отредактируйте `zabbix_agent2.conf`:
-   ```ini
-   Server=zabbix-server
-   ServerActive=zabbix-server
-   Hostname=my-new-host
-   ```
-3. Перезапустите контейнер
-4. Добавьте хост в Zabbix UI
-
-### Изменить пароль GrayLog
-
-Пароль находится в переменной `GRAYLOG_ROOT_PASSWORD_SHA2` в `docker-compose.yml`.
-Генерируется через `echo -n "пароль" | sha256sum`.
-
-```bash
-# Например, для пароля "password123"
-echo -n "password123" | sha256sum
-```
 
